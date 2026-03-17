@@ -6214,9 +6214,10 @@ window.addEventListener('DOMContentLoaded', () => {
   updatePendingBadge();
   renderDashboard();
 
-  // Check sync status
+  // Auto-load dari Google Sheets semasa startup
   if (state.settings.scriptURL && state.settings.scriptURL.includes('script.google.com')) {
-    setSyncStatus('online', 'Bersambung');
+    setSyncStatus('syncing', 'Memuatkan data...');
+    autoLoadFromSheets();
   } else {
     setSyncStatus('offline', 'Tetapkan URL Sync');
   }
@@ -6229,6 +6230,54 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+// Load senyap dari Sheets semasa startup — tidak ganggu UI
+async function autoLoadFromSheets() {
+  const url = state.settings.scriptURL;
+  try {
+    const data = await gasGet(url, { action: 'loadAll' });
+    if (data.error) throw new Error(data.error);
+
+    // Semak sama ada ada data dalam Sheets
+    const hasData = data.students &&
+      (Object.keys(data.scores?.science || {}).length > 0 ||
+       Object.keys(data.scores?.english || {}).length > 0 ||
+       Object.keys(data.points || {}).length > 0);
+
+    if (data.students)   state.students   = data.students;
+    if (data.scores)     state.scores     = data.scores;
+    if (data.rpt)        state.rpt        = data.rpt;
+    if (data.rph)        state.rph        = data.rph;
+    if (data.settings)   state.settings   = Object.assign({}, state.settings, data.settings);
+    if (data.points)     state.points     = data.points;
+    if (data.bookChecks) state.bookChecks = data.bookChecks;
+
+    // Kemaskini sidebar dengan settings terbaru
+    document.getElementById('sb-school').textContent  = state.settings.school  || 'SK Bandar Tawau';
+    document.getElementById('sb-teacher').textContent = 'Guru: ' + (state.settings.teacher || 'Harsidi bin Junick');
+
+    saveLocal();
+    updatePendingBadge();
+
+    // Refresh halaman yang sedang aktif
+    const activePage = document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard';
+    navigateTo(activePage);
+
+    const timeStr = new Date().toLocaleTimeString('ms-MY', { hour:'2-digit', minute:'2-digit' });
+    setSyncStatus('online', `Dikemas kini · ${timeStr}`);
+
+    if (hasData) {
+      showToast('✅ Data terkini dimuatkan dari Google Sheets.', 'success');
+    } else {
+      setSyncStatus('online', 'Bersambung');
+    }
+
+  } catch(e) {
+    // Gagal load — guna data localStorage sahaja, tidak tunjuk error
+    setSyncStatus('online', 'Bersambung (offline cache)');
+    console.warn('Auto-load dari Sheets gagal:', e.message);
+  }
+}
 </script>
 </body>
 </html>
