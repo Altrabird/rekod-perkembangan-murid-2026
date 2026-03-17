@@ -5146,18 +5146,33 @@ async function syncToSheets() {
   }
   setSyncStatus('syncing', 'Menyimpan...');
   try {
-    const payload = {
-      action:     'saveAll',
-      students:   state.students,
-      scores:     state.scores,
-      rpt:        state.rpt,
-      rph:        state.rph,
-      settings:   state.settings,
-      points:     state.points     || {},
+    // Hantar dalam 3 POST berasingan — elak payload terlalu besar
+    // Bahagian 1: scores (paling besar)
+    await gasRequest(url, {
+      action:  'savePart',
+      part:    'scores',
+      scores:  state.scores,
+      points:  state.points     || {},
       bookChecks: state.bookChecks || {}
-    };
-    const data = await gasRequest(url, payload);
+    });
+
+    // Bahagian 2: students + settings + rpt + rph
+    await gasRequest(url, {
+      action:   'savePart',
+      part:     'meta',
+      students: state.students,
+      rpt:      state.rpt,
+      rph:      state.rph,
+      settings: state.settings
+    });
+
+    // Bahagian 3: tulis sheets (trigger sheet writing)
+    const data = await gasRequest(url, {
+      action: 'writeSheets'
+    });
+
     if (data.error) throw new Error(data.error);
+
     setSyncStatus('online', 'Synced · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
     showToast('✅ Data disimpan ke Google Sheets!', 'success');
   } catch(e) {
@@ -6231,19 +6246,35 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Load senyap dari Sheets semasa startup — tidak ganggu UI
+// Load senyap dari Sheets semasa startup — TIDAK overwrite jika data tempatan lebih banyak
 async function autoLoadFromSheets() {
   const url = state.settings.scriptURL;
   try {
     const data = await gasGet(url, { action: 'loadAll' });
     if (data.error) throw new Error(data.error);
 
-    // Semak sama ada ada data dalam Sheets
-    const hasData = data.students &&
-      (Object.keys(data.scores?.science || {}).length > 0 ||
-       Object.keys(data.scores?.english || {}).length > 0 ||
-       Object.keys(data.points || {}).length > 0);
+    // Kira bilangan rekod TP dari Sheets vs localStorage
+    function countScores(scores) {
+      let n = 0;
+      Object.values(scores || {}).forEach(subj =>
+        Object.values(subj || {}).forEach(student =>
+          Object.values(student || {}).forEach(topic =>
+            { n += Object.keys(topic || {}).length; })));
+      return n;
+    }
 
+    const sheetsScoreCount = countScores(data.scores);
+    const localScoreCount  = countScores(state.scores);
+
+    // PERLINDUNGAN: jangan overwrite jika Sheets ada data lebih sedikit
+    // (bermakna Sheets kosong / belum sync / error)
+    if (localScoreCount > 0 && sheetsScoreCount === 0) {
+      setSyncStatus('online', 'Bersambung (data tempatan dikekal)');
+      console.log('autoLoad: Sheets kosong, kekal data tempatan (' + localScoreCount + ' rekod)');
+      return;
+    }
+
+    // Jika Sheets ada data lebih banyak atau sama — gunakan data Sheets
     if (data.students)   state.students   = data.students;
     if (data.scores)     state.scores     = data.scores;
     if (data.rpt)        state.rpt        = data.rpt;
@@ -6252,30 +6283,28 @@ async function autoLoadFromSheets() {
     if (data.points)     state.points     = data.points;
     if (data.bookChecks) state.bookChecks = data.bookChecks;
 
-    // Kemaskini sidebar dengan settings terbaru
     document.getElementById('sb-school').textContent  = state.settings.school  || 'SK Bandar Tawau';
     document.getElementById('sb-teacher').textContent = 'Guru: ' + (state.settings.teacher || 'Harsidi bin Junick');
 
     saveLocal();
     updatePendingBadge();
 
-    // Refresh halaman yang sedang aktif
     const activePage = document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard';
     navigateTo(activePage);
 
     const timeStr = new Date().toLocaleTimeString('ms-MY', { hour:'2-digit', minute:'2-digit' });
     setSyncStatus('online', `Dikemas kini · ${timeStr}`);
 
-    if (hasData) {
-      showToast('✅ Data terkini dimuatkan dari Google Sheets.', 'success');
+    if (sheetsScoreCount > 0) {
+      showToast(`✅ ${sheetsScoreCount} rekod dimuatkan dari Google Sheets.`, 'success');
     } else {
       setSyncStatus('online', 'Bersambung');
     }
 
   } catch(e) {
-    // Gagal load — guna data localStorage sahaja, tidak tunjuk error
+    // Gagal — kekal data localStorage, jangan reset apa-apa
     setSyncStatus('online', 'Bersambung (offline cache)');
-    console.warn('Auto-load dari Sheets gagal:', e.message);
+    console.warn('Auto-load dari Sheets gagal, kekal data tempatan:', e.message);
   }
 }
 </script>
