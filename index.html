@@ -2604,7 +2604,7 @@ let state = {
     code: 'XBA3051',
     teacher: 'Harsidi bin Junick',
     year: new Date().getFullYear().toString(),
-    scriptURL: 'https://script.google.com/macros/s/AKfycbxqfbHglxhz0VXMNnJFj-55rARTMR_J9shFqyUysvbz0Jou__OXtrQ3BBoxSC2xHEjvHw/exec'
+    scriptURL: 'https://script.google.com/macros/s/AKfycbzhCv1dYt7RiMQFgh434UR64dRRtmFnlUZnA-qroOVFiSEfP9JmbPfApMBVYV-RCq7cOg/exec'
   },
   students: JSON.parse(JSON.stringify(INITIAL_STUDENTS)),
   scores:     { science: {}, english: {} },
@@ -2654,7 +2654,7 @@ function loadLocal() {
       state.settings   = Object.assign({}, state.settings, parsed.settings || {});
       // Keep default scriptURL if saved one is empty
       if (!state.settings.scriptURL) {
-        state.settings.scriptURL = 'https://script.google.com/macros/s/AKfycbxqfbHglxhz0VXMNnJFj-55rARTMR_J9shFqyUysvbz0Jou__OXtrQ3BBoxSC2xHEjvHw/exec';
+        state.settings.scriptURL = 'https://script.google.com/macros/s/AKfycbzhCv1dYt7RiMQFgh434UR64dRRtmFnlUZnA-qroOVFiSEfP9JmbPfApMBVYV-RCq7cOg/exec';
       }
       if (!state.students) state.students = JSON.parse(JSON.stringify(INITIAL_STUDENTS));
       if (!state.students.science) state.students.science = JSON.parse(JSON.stringify(INITIAL_STUDENTS.science));
