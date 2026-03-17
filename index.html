@@ -4649,8 +4649,10 @@ function renderBooksPage() {
   const clsWrap = document.getElementById('books-class-wrap');
   if (subj === 'science') {
     clsWrap.style.display = '';
+    // Read current value FIRST before rebuilding options
+    const currentVal = clsSel.value || ui.booksClass;
     clsSel.innerHTML = SCIENCE_CLASSES.map(c =>
-      `<option value="${c}" ${c === ui.booksClass ? 'selected' : ''}>${c}</option>`).join('');
+      `<option value="${c}" ${c === currentVal ? 'selected' : ''}>${c}</option>`).join('');
     ui.booksClass = clsSel.value;
   } else {
     clsWrap.style.display = 'none';
@@ -4660,7 +4662,7 @@ function renderBooksPage() {
   const dateInp = document.getElementById('booksDate');
   if (!dateInp.value) dateInp.value = new Date().toISOString().split('T')[0];
 
-  // Student toggle grid
+  // Student toggle grid — always use latest ui.booksClass
   const students = subj === 'science'
     ? (state.students.science[ui.booksClass] || [])
     : (state.students.english || []);
@@ -4800,8 +4802,9 @@ function renderPointsPage() {
   const clsWrap = document.getElementById('pts-class-wrap');
   if (subj === 'science') {
     clsWrap.style.display = '';
+    const currentVal = clsSel.value || ui.pointsClass;
     clsSel.innerHTML = SCIENCE_CLASSES.map(c =>
-      `<option value="${c}" ${c === ui.pointsClass ? 'selected' : ''}>${c}</option>`).join('');
+      `<option value="${c}" ${c === currentVal ? 'selected' : ''}>${c}</option>`).join('');
     ui.pointsClass = clsSel.value;
   } else {
     clsWrap.style.display = 'none';
