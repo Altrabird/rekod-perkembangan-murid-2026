@@ -6023,75 +6023,152 @@ function progBar(val, max=6) {
 // ── 1. Student report (one page per student) ──────────────────
 
 function buildStudentReportHTML(subj, cls, students) {
-  const topics  = subj === 'science' ? SCIENCE_TOPICS : ENGLISH_SKILLS;
+  const topics    = subj === 'science' ? SCIENCE_TOPICS : ENGLISH_SKILLS;
   const subjLabel = subj === 'science' ? 'Sains Tahun 2' : 'BI Tahun 3';
   const clsLabel  = subj === 'science' ? `Kelas ${cls}` : 'Tahun 3';
-  const badgeBg   = subj === 'science' ? 'background:#f5f3ff;color:#7c3aed' : 'background:#ecfeff;color:#0891b2';
+  const spPrefix  = subj === 'science' ? 'SP' : 'LS';
+  const tpLabel   = subj === 'science' ? 'TP' : 'PL';
+
+  // TP colour helper (inline for print window)
+  function tpColor(tp) {
+    if (!tp) return '#b0b3bf';
+    const c = {1:'#dc2626',2:'#ea580c',3:'#ca8a04',4:'#16a34a',5:'#2563eb',6:'#7c3aed'};
+    return c[tp] || '#b0b3bf';
+  }
+  function tpBg(tp) {
+    if (!tp) return '#f7f8fa';
+    const c = {1:'#fef2f2',2:'#fff7ed',3:'#fefce8',4:'#f0fdf4',5:'#eff6ff',6:'#faf5ff'};
+    return c[tp] || '#f7f8fa';
+  }
 
   return students.map((name, si) => {
-    const overall = getStudentOverallAvg(subj, cls, name);
+    const overall     = getStudentOverallAvg(subj, cls, name);
+    const overallColor = overall >= 5 ? '#7c3aed' : overall >= 4 ? '#16a34a' : overall >= 3 ? '#ca8a04' : overall > 0 ? '#dc2626' : '#b0b3bf';
+    const pageBreak   = si < students.length - 1 ? '<div class="page-break"></div>' : '';
 
-    const topicRows = topics.map(t => {
-      const avg = getStudentTopicAvg(subj, cls, name, t.id);
-      // Per-SP detail
-      const spCells = t.standards.map(sp => {
+    // Build each topic block: satu baris header + SP chips dalam baris kedua
+    const topicBlocks = topics.map(t => {
+      const avg    = getStudentTopicAvg(subj, cls, name, t.id);
+      const pct    = avg > 0 ? Math.min(100, Math.round(avg / 6 * 100)) : 0;
+      const barCol = avg >= 4 ? '#16a34a' : avg >= 2 ? '#ca8a04' : '#dc2626';
+
+      // SP chips — setiap SP dalam kotak kecil
+      const spChips = t.standards.map(sp => {
         const sc = getScore(subj, cls, name, t.id, sp);
-        return `<td>${sc ? rtpSpan(sc.tp) : '<span class="rtp-0">—</span>'}</td>`;
+        const tp = sc ? sc.tp : null;
+        return `
+          <div style="display:inline-flex;flex-direction:column;align-items:center;
+            margin:2px 3px;min-width:38px;">
+            <div style="font-size:7.5px;color:#7a7d8a;font-weight:600;
+              margin-bottom:2px;letter-spacing:.2px">${spPrefix} ${sp}</div>
+            <div style="background:${tpBg(tp)};color:${tpColor(tp)};
+              font-weight:700;font-size:9px;padding:3px 6px;border-radius:5px;
+              border:1px solid ${tp ? tpColor(tp)+'44' : '#e8eaef'};
+              min-width:34px;text-align:center;white-space:nowrap">
+              ${tp ? tpLabel+' '+tp : '—'}
+            </div>
+          </div>`;
       }).join('');
 
-      return `<tr>
-        <td class="left">${t.title}</td>
-        <td>${avg > 0 ? rtpSpan(avg) : '<span class="rtp-0">—</span>'}</td>
-        <td style="min-width:80px">${progBar(avg)}</td>
-        ${spCells}
-      </tr>`;
+      return `
+        <tr style="border-bottom:1px solid #e8eaef;">
+          <td style="padding:7px 8px;vertical-align:top;width:22%;font-weight:700;
+            font-size:10px;color:#0e0f11;border-right:2px solid #e8eaef;line-height:1.4">
+            ${t.title}
+          </td>
+          <td style="padding:7px 8px;vertical-align:top;width:11%;text-align:center;
+            border-right:1px solid #e8eaef">
+            ${avg > 0 ? `<span style="background:${tpBg(Math.round(avg))};color:${tpColor(Math.round(avg))};
+              font-weight:800;font-size:10px;padding:3px 8px;border-radius:6px;
+              white-space:nowrap">${tpLabel} ${avg.toFixed(1)}</span>` : '<span style="color:#b0b3bf">—</span>'}
+          </td>
+          <td style="padding:7px 8px;vertical-align:top;width:12%;border-right:1px solid #e8eaef">
+            ${avg > 0 ? `<div style="height:6px;background:#e8eaef;border-radius:3px;overflow:hidden;margin-top:4px">
+              <div style="height:100%;width:${pct}%;background:${barCol};border-radius:3px"></div>
+            </div>
+            <div style="font-size:8px;color:#7a7d8a;margin-top:3px;text-align:center">${pct}%</div>` : ''}
+          </td>
+          <td style="padding:5px 8px;vertical-align:middle">
+            <div style="display:flex;flex-wrap:wrap;gap:0;align-items:flex-start">
+              ${spChips}
+            </div>
+          </td>
+        </tr>`;
     }).join('');
-
-    // SP header row
-    const maxSPs = Math.max(...topics.map(t => t.standards.length));
-    const spHeaders = topics.flatMap(t => t.standards).map(sp =>
-      `<th style="font-size:8px;padding:4px 2px">${sp}</th>`
-    ).join('');
-
-    const pageBreak = si < students.length - 1
-      ? '<div class="page-break"></div>' : '';
 
     return `
     ${docHeader(name, subjLabel + ' · ' + clsLabel, subjLabel, 'rpm-doc-badge')}
-    <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
-      <div>
-        <h2>${name}</h2>
-        <div style="font-size:10px;color:#7a7d8a">${clsLabel}</div>
+
+    <!-- Nama + purata keseluruhan -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;
+      padding:10px 14px;background:#f7f8fa;border-radius:10px;border:1.5px solid #e8eaef">
+      <div style="flex:1">
+        <div style="font-size:16px;font-weight:800;color:#0e0f11">${name}</div>
+        <div style="font-size:10px;color:#7a7d8a;margin-top:1px">${clsLabel} · ${subjLabel}</div>
       </div>
-      <div style="margin-left:auto;text-align:center;background:#f7f8fa;padding:10px 18px;border-radius:10px;border:1.5px solid #e8eaef">
-        <div style="font-size:28px;font-weight:800;line-height:1;color:${overall >= 4 ? '#16a34a' : overall >= 2 ? '#ca8a04' : overall > 0 ? '#dc2626' : '#b0b3bf'}">${overall > 0 ? overall.toFixed(1) : '—'}</div>
-        <div style="font-size:9px;color:#7a7d8a;margin-top:2px">Purata / 6.0</div>
+      <div style="text-align:center;background:white;padding:8px 16px;
+        border-radius:8px;border:1.5px solid #e8eaef;min-width:80px">
+        <div style="font-size:26px;font-weight:800;line-height:1;color:${overallColor}">
+          ${overall > 0 ? overall.toFixed(1) : '—'}
+        </div>
+        <div style="font-size:8.5px;color:#7a7d8a;margin-top:2px">Purata / 6.0</div>
       </div>
     </div>
 
-    <table>
+    <!-- Jadual prestasi -->
+    <table style="width:100%;border-collapse:collapse;font-size:10.5px;
+      border:1.5px solid #e8eaef;border-radius:8px;overflow:hidden">
       <thead>
-        <tr>
-          <th class="left" style="width:28%">Topik / Kemahiran</th>
-          <th>Purata TP</th>
-          <th>Prestasi</th>
-          ${spHeaders}
+        <tr style="background:#0e0f11">
+          <th style="padding:7px 8px;text-align:left;color:white;font-size:9.5px;
+            font-weight:700;text-transform:uppercase;letter-spacing:.3px;width:22%">
+            Topik / Kemahiran
+          </th>
+          <th style="padding:7px 8px;text-align:center;color:white;font-size:9.5px;
+            font-weight:700;text-transform:uppercase;letter-spacing:.3px;width:11%">
+            Purata ${tpLabel}
+          </th>
+          <th style="padding:7px 8px;text-align:center;color:white;font-size:9.5px;
+            font-weight:700;text-transform:uppercase;letter-spacing:.3px;width:12%">
+            Prestasi
+          </th>
+          <th style="padding:7px 8px;text-align:left;color:white;font-size:9.5px;
+            font-weight:700;text-transform:uppercase;letter-spacing:.3px">
+            ${spPrefix} / Pencapaian
+          </th>
         </tr>
       </thead>
       <tbody>
-        ${topicRows}
-        <tr class="summary-row">
-          <td class="left">PURATA KESELURUHAN</td>
-          <td colspan="2">${overall > 0 ? rtpSpan(overall) : '—'}</td>
-          <td colspan="${topics.flatMap(t=>t.standards).length}"></td>
+        ${topicBlocks}
+        <!-- Baris purata keseluruhan -->
+        <tr style="background:#f0fdf4;border-top:2px solid #6ee7b7">
+          <td style="padding:8px;font-weight:800;font-size:10.5px;color:#065f46;
+            border-right:2px solid #6ee7b7">PURATA KESELURUHAN</td>
+          <td style="padding:8px;text-align:center;border-right:1px solid #6ee7b7">
+            ${overall > 0 ? `<span style="background:${tpBg(Math.round(overall))};
+              color:${tpColor(Math.round(overall))};font-weight:800;font-size:11px;
+              padding:3px 10px;border-radius:6px">${tpLabel} ${overall.toFixed(1)}</span>` : '—'}
+          </td>
+          <td style="padding:8px;border-right:1px solid #6ee7b7">
+            ${overall > 0 ? `<div style="height:6px;background:#d1fae5;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${Math.round(overall/6*100)}%;background:${overallColor};border-radius:3px"></div>
+            </div>` : ''}
+          </td>
+          <td style="padding:8px;font-size:10px;color:#065f46;font-weight:600">
+            ${overall >= 5 ? 'Cemerlang — teruskan pencapaian!' :
+              overall >= 4 ? 'Baik — teruskan usaha!' :
+              overall >= 3 ? 'Memuaskan — boleh ditingkatkan.' :
+              overall > 0  ? 'Perlu bimbingan tambahan.' : '—'}
+          </td>
         </tr>
       </tbody>
     </table>
 
-    <div class="rpm-sig-row">
-      <div class="rpm-sig-box">Tandatangan Guru<br><br><br></div>
-      <div class="rpm-sig-box">Tandatangan Ibu Bapa / Penjaga<br><br><br></div>
-      <div class="rpm-sig-box">Tarikh Diterima<br><br><br></div>
+    <!-- Ruang tandatangan -->
+    <div class="rpm-sig-row" style="margin-top:16px">
+      <div class="rpm-sig-box">Tandatangan Guru<br><br><br><br></div>
+      <div class="rpm-sig-box">Tandatangan Ibu Bapa / Penjaga<br><br><br><br></div>
+      <div class="rpm-sig-box">Tarikh Diterima<br><br><br><br></div>
     </div>
 
     ${docFooter()}
