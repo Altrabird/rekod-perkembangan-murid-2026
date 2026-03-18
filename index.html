@@ -5261,25 +5261,27 @@ async function restoreFromSheets() {
     return;
   }
 
-  if (!confirm('Ini akan GANTIKAN data dalam server dengan data dari Google Sheets.\n\nPastikan tab "TARIKH_TAKSIRAN" dalam Sheets ada data yang betul.\n\nTeruskan?')) return;
+  if (!confirm('Ini akan baca data dari tab TARIKH_TAKSIRAN dalam Google Sheets dan simpan ke server.\n\nPastikan tab "TARIKH_TAKSIRAN" ada data yang betul.\n\nTeruskan?')) return;
 
   setSyncStatus('syncing', 'Memulihkan...');
   showToast('⏳ Memulihkan data dari Google Sheets...', 'info');
 
   try {
-    // Langkah 1: GAS baca Sheets → simpan ke PropertiesService
-    const restoreData = await gasGet(url, { action: 'importFromSheets' });
+    // Hantar action importFromSheets melalui POST
+    const restoreData = await gasRequest(url, { action: 'importFromSheets' });
     if (restoreData.error) throw new Error(restoreData.error);
 
-    showToast(`✅ ${restoreData.imported} rekod dipulihkan dari Sheets ke server.`, 'success');
+    showToast(`⏳ ${restoreData.imported || 0} rekod dipulihkan. Memuatkan semula...`, 'success');
 
-    // Langkah 2: Muat semula data dari server ke app
-    await new Promise(r => setTimeout(r, 1000));
+    // Muat semula data dari server ke app
+    await new Promise(r => setTimeout(r, 1500));
     const data = await gasGet(url, { action: 'loadAll' });
     if (data.error) throw new Error(data.error);
 
     if (data.students)   state.students   = data.students;
     if (data.scores)     state.scores     = data.scores;
+    if (data.rpt)        state.rpt        = data.rpt;
+    if (data.rph)        state.rph        = data.rph;
     if (data.settings)   state.settings   = Object.assign({}, state.settings, data.settings);
     if (data.points)     state.points     = data.points;
     if (data.bookChecks) state.bookChecks = data.bookChecks;
@@ -5289,7 +5291,7 @@ async function restoreFromSheets() {
     navigateTo(document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
 
     setSyncStatus('online', 'Dipulihkan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
-    showToast('✅ App dikemas kini dengan data dari Google Sheets!', 'success');
+    showToast(`✅ Berjaya! ${restoreData.imported || 0} rekod dimuatkan dari Google Sheets.`, 'success');
 
   } catch(e) {
     setSyncStatus('error', 'Gagal pulihkan');
