@@ -5297,6 +5297,8 @@ async function restoreFromSheets() {
     console.error('restoreFromSheets error:', e);
   }
 }
+
+async function loadFromSheets() {
   const url = state.settings.scriptURL;
   if (!url || !url.includes('script.google.com')) {
     showToast('Sila konfigurasi URL Apps Script dahulu.', 'warning');
