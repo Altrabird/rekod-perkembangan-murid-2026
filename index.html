@@ -1770,6 +1770,11 @@ tbody tr:hover { background: var(--surface); }
         <span id="syncText">Semak sambungan...</span>
         <svg style="width:13px;height:13px;margin-left:auto;opacity:.4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
       </div>
+      <div class="sync-pill" onclick="writeToSheets()" id="writeSheetsBtn" style="margin-top:6px;background:rgba(16,185,129,.1);border:1px solid rgba(52,211,153,.2);" title="Eksport semua data ke Google Sheets (5-15 saat)">
+        <svg style="width:13px;height:13px;color:#34d399;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+        <span style="color:#34d399;font-size:12px" id="writeSheetsText">Kemas kini Sheets</span>
+        <svg style="width:11px;height:11px;margin-left:auto;opacity:.4;color:#34d399" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
     </div>
   </aside>
 
@@ -1785,6 +1790,10 @@ tbody tr:hover { background: var(--surface); }
         <button class="btn btn-secondary btn-sm" onclick="exportData()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
           Export
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="writeToSheets()" title="Eksport ke Google Sheets (5-15 saat)" style="color:var(--accent2);border-color:var(--accent2)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+          Sheets
         </button>
         <button class="btn btn-primary btn-sm" onclick="syncToSheets()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
@@ -2350,9 +2359,16 @@ tbody tr:hover { background: var(--surface); }
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                 <div>Deploy Apps Script sebagai <strong>Web App</strong> dengan akses <strong>"Anyone"</strong>. Salin URL dan tampal di sini. URL ini juga digunakan untuk jana RPH dengan AI (melalui proxy).</div>
               </div>
-              <div style="display:flex;gap:10px;">
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
                 <button class="btn btn-success" onclick="saveAndTestSync()">Simpan & Uji</button>
                 <button class="btn btn-secondary" onclick="loadFromSheets()">Load dari Sheets</button>
+                <button class="btn btn-secondary" onclick="writeToSheets()" style="color:var(--accent2);border-color:var(--accent2)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+                  Kemas kini Sheets
+                </button>
+              </div>
+              <div style="margin-top:8px;padding:8px 12px;background:var(--warn-soft);border:1px solid #fcd34d;border-radius:8px;font-size:12px;color:#92400e">
+                <strong>💡 Tip:</strong> <strong>Sync</strong> (Ctrl+S) = simpan data sahaja, pantas ~2 saat. <strong>Kemas kini Sheets</strong> = tulis ke Google Sheets, ambil masa 5-15 saat. Lakukan "Kemas kini Sheets" hanya bila mahu lihat data dalam spreadsheet.
               </div>
 
               <div class="divider"></div>
@@ -5138,6 +5154,9 @@ async function gasGet(url, params) {
   return JSON.parse(text);
 }
 
+// ── SYNC PANTAS: simpan ke PropertiesService sahaja (~1-2 saat) ──
+// Dipanggil secara automatik: tukar TP, semakan buku, Ctrl+S
+// TIDAK menulis ke Sheets — gunakan writeToSheets() untuk itu
 async function syncToSheets() {
   const url = state.settings.scriptURL;
   if (!url || !url.includes('script.google.com')) {
@@ -5146,13 +5165,12 @@ async function syncToSheets() {
   }
   setSyncStatus('syncing', 'Menyimpan...');
   try {
-    // Hantar dalam 3 POST berasingan — elak payload terlalu besar
-    // Bahagian 1: scores (paling besar)
+    // Bahagian 1: scores + points + bookChecks
     await gasRequest(url, {
-      action:  'savePart',
-      part:    'scores',
-      scores:  state.scores,
-      points:  state.points     || {},
+      action:     'savePart',
+      part:       'scores',
+      scores:     state.scores,
+      points:     state.points     || {},
       bookChecks: state.bookChecks || {}
     });
 
@@ -5166,19 +5184,66 @@ async function syncToSheets() {
       settings: state.settings
     });
 
-    // Bahagian 3: tulis sheets (trigger sheet writing)
-    const data = await gasRequest(url, {
-      action: 'writeSheets'
-    });
-
-    if (data.error) throw new Error(data.error);
-
-    setSyncStatus('online', 'Synced · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
-    showToast('✅ Data disimpan ke Google Sheets!', 'success');
+    setSyncStatus('online', 'Disimpan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
+    showToast('✅ Data disimpan! Klik "Kemas kini Sheets" untuk eksport ke spreadsheet.', 'success');
   } catch(e) {
     setSyncStatus('error', 'Sync gagal');
     showToast('Sync gagal: ' + e.message, 'error');
     console.error('Sync error:', e);
+  }
+}
+
+// ── KEMAS KINI SHEETS: tulis ke Google Sheets (~5-15 saat) ───────
+// Dipanggil MANUAL sahaja — klik butang "Kemas kini Sheets" / "Sheets"
+// Mula-mula simpan data terkini, kemudian tulis ke semua tab Sheets
+async function writeToSheets() {
+  const url = state.settings.scriptURL;
+  if (!url || !url.includes('script.google.com')) {
+    showToast('Sila konfigurasi URL Apps Script dahulu.', 'warning');
+    return;
+  }
+
+  // Disable butang semasa proses
+  const btn  = document.getElementById('writeSheetsBtn');
+  const btxt = document.getElementById('writeSheetsText');
+  if (btn)  btn.style.pointerEvents  = 'none';
+  if (btxt) btxt.textContent = 'Menulis...';
+
+  setSyncStatus('syncing', 'Menulis ke Sheets...');
+
+  try {
+    // Langkah 1: simpan data terkini dulu (pantas)
+    await gasRequest(url, {
+      action:     'savePart',
+      part:       'scores',
+      scores:     state.scores,
+      points:     state.points     || {},
+      bookChecks: state.bookChecks || {}
+    });
+    await gasRequest(url, {
+      action:   'savePart',
+      part:     'meta',
+      students: state.students,
+      rpt:      state.rpt,
+      rph:      state.rph,
+      settings: state.settings
+    });
+
+    // Langkah 2: tulis ke Sheets (lambat — 5-15 saat)
+    const data = await gasRequest(url, { action: 'writeSheets' });
+    if (data.error) throw new Error(data.error);
+
+    const timeStr = new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'});
+    setSyncStatus('online', 'Sheets dikemas · ' + timeStr);
+    showToast(`✅ Google Sheets dikemas kini! (${data.records || 0} rekod, ${data.written || 0} tab)`, 'success');
+    if (btxt) btxt.textContent = 'Dikemas · ' + timeStr;
+  } catch(e) {
+    setSyncStatus('error', 'Gagal tulis Sheets');
+    showToast('Gagal kemas kini Sheets: ' + e.message, 'error');
+    console.error('writeSheets error:', e);
+    if (btxt) btxt.textContent = 'Kemas kini Sheets';
+  } finally {
+    if (btn) btn.style.pointerEvents = '';
   }
 }
 
