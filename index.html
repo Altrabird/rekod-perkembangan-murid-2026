@@ -2366,9 +2366,13 @@ tbody tr:hover { background: var(--surface); }
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
                   Kemas kini Sheets
                 </button>
+                <button class="btn btn-danger" onclick="restoreFromSheets()" style="background:var(--warn-soft);color:var(--warn);border-color:#fcd34d">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  Pulihkan dari Sheets
+                </button>
               </div>
               <div style="margin-top:8px;padding:8px 12px;background:var(--warn-soft);border:1px solid #fcd34d;border-radius:8px;font-size:12px;color:#92400e">
-                <strong>💡 Tip:</strong> <strong>Sync</strong> (Ctrl+S) = simpan data sahaja, pantas ~2 saat. <strong>Kemas kini Sheets</strong> = tulis ke Google Sheets, ambil masa 5-15 saat. Lakukan "Kemas kini Sheets" hanya bila mahu lihat data dalam spreadsheet.
+                <strong>💡 Tip:</strong> <strong>Sync</strong> (Ctrl+S) = simpan data ke server, pantas ~2 saat. <strong>Kemas kini Sheets</strong> = eksport ke Google Sheets, 5-15 saat. <strong>Pulihkan dari Sheets</strong> = jika data server salah, baca semula dari tab Google Sheets.
               </div>
 
               <div class="divider"></div>
@@ -5247,7 +5251,52 @@ async function writeToSheets() {
   }
 }
 
-async function loadFromSheets() {
+// ── PULIHKAN DARI SHEETS → server → app ──────────────────────────
+// Guna ini jika data dalam app/server salah.
+// GAS akan baca dari tab TARIKH_TAKSIRAN dan simpan semula ke server.
+async function restoreFromSheets() {
+  const url = state.settings.scriptURL;
+  if (!url || !url.includes('script.google.com')) {
+    showToast('Sila konfigurasi URL Apps Script dahulu.', 'warning');
+    return;
+  }
+
+  if (!confirm('Ini akan GANTIKAN data dalam server dengan data dari Google Sheets.\n\nPastikan tab "TARIKH_TAKSIRAN" dalam Sheets ada data yang betul.\n\nTeruskan?')) return;
+
+  setSyncStatus('syncing', 'Memulihkan...');
+  showToast('⏳ Memulihkan data dari Google Sheets...', 'info');
+
+  try {
+    // Langkah 1: GAS baca Sheets → simpan ke PropertiesService
+    const restoreData = await gasGet(url, { action: 'importFromSheets' });
+    if (restoreData.error) throw new Error(restoreData.error);
+
+    showToast(`✅ ${restoreData.imported} rekod dipulihkan dari Sheets ke server.`, 'success');
+
+    // Langkah 2: Muat semula data dari server ke app
+    await new Promise(r => setTimeout(r, 1000));
+    const data = await gasGet(url, { action: 'loadAll' });
+    if (data.error) throw new Error(data.error);
+
+    if (data.students)   state.students   = data.students;
+    if (data.scores)     state.scores     = data.scores;
+    if (data.settings)   state.settings   = Object.assign({}, state.settings, data.settings);
+    if (data.points)     state.points     = data.points;
+    if (data.bookChecks) state.bookChecks = data.bookChecks;
+
+    saveLocal();
+    updatePendingBadge();
+    navigateTo(document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
+
+    setSyncStatus('online', 'Dipulihkan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
+    showToast('✅ App dikemas kini dengan data dari Google Sheets!', 'success');
+
+  } catch(e) {
+    setSyncStatus('error', 'Gagal pulihkan');
+    showToast('Gagal pulihkan: ' + e.message, 'error');
+    console.error('restoreFromSheets error:', e);
+  }
+}
   const url = state.settings.scriptURL;
   if (!url || !url.includes('script.google.com')) {
     showToast('Sila konfigurasi URL Apps Script dahulu.', 'warning');
@@ -6388,14 +6437,16 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Load senyap dari Sheets semasa startup — TIDAK overwrite jika data tempatan lebih banyak
+// Load senyap dari Sheets semasa startup
+// SELALU guna data dari PropertiesService (server) sebagai sumber hakiki.
+// localStorage hanya digunakan jika sambungan gagal.
 async function autoLoadFromSheets() {
   const url = state.settings.scriptURL;
   try {
     const data = await gasGet(url, { action: 'loadAll' });
     if (data.error) throw new Error(data.error);
 
-    // Kira bilangan rekod TP dari Sheets vs localStorage
+    // Kira rekod
     function countScores(scores) {
       let n = 0;
       Object.values(scores || {}).forEach(subj =>
@@ -6408,15 +6459,17 @@ async function autoLoadFromSheets() {
     const sheetsScoreCount = countScores(data.scores);
     const localScoreCount  = countScores(state.scores);
 
-    // PERLINDUNGAN: jangan overwrite jika Sheets ada data lebih sedikit
-    // (bermakna Sheets kosong / belum sync / error)
-    if (localScoreCount > 0 && sheetsScoreCount === 0) {
-      setSyncStatus('online', 'Bersambung (data tempatan dikekal)');
-      console.log('autoLoad: Sheets kosong, kekal data tempatan (' + localScoreCount + ' rekod)');
+    // SELALU pakai data server jika ada data di server
+    // Hanya kekal localStorage jika server benar-benar kosong (0 rekod)
+    // DAN localStorage ada data — maknanya belum pernah sync langsung
+    if (sheetsScoreCount === 0 && localScoreCount > 0) {
+      setSyncStatus('online', 'Bersambung — data tempatan (belum sync)');
+      showToast('⚠️ Server kosong. Klik Sync untuk simpan data anda ke server.', 'warning');
+      console.log('autoLoad: server kosong, kekal localStorage (' + localScoreCount + ' rekod). Sila Sync!');
       return;
     }
 
-    // Jika Sheets ada data lebih banyak atau sama — gunakan data Sheets
+    // Guna data server — ini sumber hakiki
     if (data.students)   state.students   = data.students;
     if (data.scores)     state.scores     = data.scores;
     if (data.rpt)        state.rpt        = data.rpt;
@@ -6428,6 +6481,7 @@ async function autoLoadFromSheets() {
     document.getElementById('sb-school').textContent  = state.settings.school  || 'SK Bandar Tawau';
     document.getElementById('sb-teacher').textContent = 'Guru: ' + (state.settings.teacher || 'Harsidi bin Junick');
 
+    // Simpan ke localStorage sebagai cache
     saveLocal();
     updatePendingBadge();
 
@@ -6438,15 +6492,16 @@ async function autoLoadFromSheets() {
     setSyncStatus('online', `Dikemas kini · ${timeStr}`);
 
     if (sheetsScoreCount > 0) {
-      showToast(`✅ ${sheetsScoreCount} rekod dimuatkan dari Google Sheets.`, 'success');
+      showToast(`✅ ${sheetsScoreCount} rekod dimuatkan dari server.`, 'success');
     } else {
-      setSyncStatus('online', 'Bersambung');
+      setSyncStatus('online', 'Bersambung (tiada data lagi)');
     }
 
   } catch(e) {
-    // Gagal — kekal data localStorage, jangan reset apa-apa
-    setSyncStatus('online', 'Bersambung (offline cache)');
-    console.warn('Auto-load dari Sheets gagal, kekal data tempatan:', e.message);
+    // Gagal sambung — kekal data localStorage sebagai cache
+    setSyncStatus('error', 'Gagal sambung server');
+    showToast('⚠️ Gagal sambung ke server. Papar data cache tempatan.', 'warning');
+    console.warn('autoLoad gagal:', e.message);
   }
 }
 </script>
