@@ -2728,6 +2728,9 @@ function navigateTo(page) {
   document.getElementById(`page-${page}`)?.classList.add('active');
   document.getElementById('pageTitle').textContent = PAGE_TITLES[page] || page;
 
+  // Update URL hash so page survives refresh
+  history.replaceState(null, '', '#' + page);
+
   if (page === 'dashboard') renderDashboard();
   if (page === 'entry')     renderEntryPage();
   if (page === 'books')     renderBooksPage();
@@ -5752,7 +5755,14 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sb-teacher').textContent = 'Guru: ' + (state.settings.teacher || 'Harsidi bin Junick');
 
   updatePendingBadge();
-  renderDashboard();
+
+  // Navigate to hash page if present (e.g. #entry, #points), else dashboard
+  const hashPage = window.location.hash.replace('#', '');
+  if (hashPage && PAGE_TITLES[hashPage]) {
+    navigateTo(hashPage);
+  } else {
+    renderDashboard();
+  }
 
   // Auto-load dari Google Sheets semasa startup
   if (state.settings.scriptURL && state.settings.scriptURL.includes('script.google.com')) {
@@ -5819,7 +5829,12 @@ async function autoLoadFromSheets() {
     saveLocal();
     updatePendingBadge();
 
-    const activePage = document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard';
+    // Respect URL hash — jika ada hash (#entry, #points dll), guna itu
+    // Jika tiada hash, kekal pada halaman yang sedang aktif
+    const hashPage   = window.location.hash.replace('#', '');
+    const activePage = (hashPage && PAGE_TITLES[hashPage])
+      ? hashPage
+      : (document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
     navigateTo(activePage);
 
     const timeStr = new Date().toLocaleTimeString('ms-MY', { hour:'2-digit', minute:'2-digit' });
