@@ -1789,7 +1789,7 @@ tbody tr:hover { background: var(--surface); }
         </button>
         <button class="btn btn-primary btn-sm" onclick="syncToSheets()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-          Sync
+          Simpan
         </button>
       </div>
     </div>
@@ -2213,7 +2213,7 @@ tbody tr:hover { background: var(--surface); }
                 </button>
               </div>
               <div style="margin-top:8px;padding:8px 12px;background:var(--warn-soft);border:1px solid #fcd34d;border-radius:8px;font-size:12px;color:#92400e">
-                <strong>💡 Tip:</strong> <strong>Sync</strong> (Ctrl+S) = simpan data ke server, pantas ~2 saat. <strong>Kemas kini Sheets</strong> = eksport ke Google Sheets, 5-15 saat. <strong>Pulihkan dari Sheets</strong> = jika data server salah, baca semula dari tab Google Sheets.
+                <strong>💡 Tip:</strong> TP disimpan <strong>automatik</strong> sebaik sahaja anda masukkan — tak perlu tekan apa-apa. Tengok titik hijau <strong>✓ Disimpan</strong> di bawah menu kiri. Tekan <strong>Kemas kini Sheets</strong> hanya bila mahu lihat data dalam Google Sheets.
               </div>
 
               <div class="divider"></div>
@@ -2493,6 +2493,8 @@ let ui = {
 
 let charts = {};
 let syncTimer;
+let syncing = false, syncAgain = false;
+let lastSent = {};   // part -> JSON terakhir yang berjaya dihantar ke server
 
 // ═══════════════════════════════════════════════════════
 // LOCAL STORAGE
@@ -2632,7 +2634,10 @@ function tpBadge(avg) {
 function scheduleSyncAutoSave() {
   clearTimeout(syncTimer);
   if (!state.settings.scriptURL || state.settings.scriptURL.includes('script.google.com') === false) return;
-  syncTimer = setTimeout(syncToSheets, 4000);
+  try { localStorage.setItem('rpm_dirty', '1'); } catch(e) {}
+  if (syncing) { syncAgain = true; return; }
+  setSyncStatus('syncing', 'Belum disimpan...');
+  syncTimer = setTimeout(() => syncToSheets(true), 1500);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4432,6 +4437,7 @@ function saveSettings() {
 async function saveAndTestSync() {
   state.settings.scriptURL = document.getElementById('setScriptURL').value.trim();
   saveLocal();
+  lastSent = {};   // uji sambungan: hantar semua
   await syncToSheets();
 }
 
@@ -4491,42 +4497,54 @@ async function gasGet(url, params) {
   return JSON.parse(text);
 }
 
-// ── SYNC PANTAS: simpan ke PropertiesService sahaja (~1-2 saat) ──
-// Dipanggil secara automatik: tukar TP, semakan buku, Ctrl+S
+function syncParts() {
+  return {
+    scores: { scores: state.scores, points: state.points || {}, bookChecks: state.bookChecks || {} },
+    meta:   { students: state.students, rpt: state.rpt, rph: state.rph, settings: state.settings }
+  };
+}
+
+function rememberSent() {
+  const parts = syncParts();
+  for (const p in parts) lastSent[p] = JSON.stringify(parts[p]);
+}
+
+// Hantar hanya bahagian yang berubah (tukar TP → 'scores' sahaja, RPH tak dihantar semula)
+async function pushChanges() {
+  const url   = state.settings.scriptURL;
+  const parts = syncParts();
+  for (const part in parts) {
+    const json = JSON.stringify(parts[part]);
+    if (lastSent[part] === json) continue;
+    await gasRequest(url, Object.assign({ action: 'savePart', part }, parts[part]));
+    lastSent[part] = json;
+  }
+}
+
+// ── SIMPAN: automatik selepas setiap perubahan, atau klik "Simpan" / Ctrl+S ──
 // TIDAK menulis ke Sheets — gunakan writeToSheets() untuk itu
-async function syncToSheets() {
+async function syncToSheets(auto) {
   const url = state.settings.scriptURL;
   if (!url || !url.includes('script.google.com')) {
     setSyncStatus('offline', 'URL belum dikonfigurasi');
     return;
   }
+  clearTimeout(syncTimer);
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
   setSyncStatus('syncing', 'Menyimpan...');
   try {
-    // Bahagian 1: scores + points + bookChecks
-    await gasRequest(url, {
-      action:     'savePart',
-      part:       'scores',
-      scores:     state.scores,
-      points:     state.points     || {},
-      bookChecks: state.bookChecks || {}
-    });
-
-    // Bahagian 2: students + settings + rpt + rph
-    await gasRequest(url, {
-      action:   'savePart',
-      part:     'meta',
-      students: state.students,
-      rpt:      state.rpt,
-      rph:      state.rph,
-      settings: state.settings
-    });
-
-    setSyncStatus('online', 'Disimpan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
-    showToast('✅ Data disimpan! Klik "Kemas kini Sheets" untuk eksport ke spreadsheet.', 'success');
+    do { syncAgain = false; await pushChanges(); } while (syncAgain);
+    try { localStorage.removeItem('rpm_dirty'); } catch(e) {}
+    setSyncStatus('online', '✓ Disimpan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
+    if (!auto) showToast('✅ Semua data telah disimpan.', 'success');
   } catch(e) {
-    setSyncStatus('error', 'Sync gagal');
-    showToast('Sync gagal: ' + e.message, 'error');
+    setSyncStatus('error', 'Belum disimpan · cuba semula...');
+    if (!auto) showToast('Gagal simpan (data selamat dalam peranti ini, akan cuba semula): ' + e.message, 'error');
     console.error('Sync error:', e);
+    syncTimer = setTimeout(() => syncToSheets(true), 30000);
+  } finally {
+    syncing = false;
   }
 }
 
@@ -4549,22 +4567,10 @@ async function writeToSheets() {
   setSyncStatus('syncing', 'Menulis ke Sheets...');
 
   try {
-    // Langkah 1: simpan data terkini dulu (pantas)
-    await gasRequest(url, {
-      action:     'savePart',
-      part:       'scores',
-      scores:     state.scores,
-      points:     state.points     || {},
-      bookChecks: state.bookChecks || {}
-    });
-    await gasRequest(url, {
-      action:   'savePart',
-      part:     'meta',
-      students: state.students,
-      rpt:      state.rpt,
-      rph:      state.rph,
-      settings: state.settings
-    });
+    // Langkah 1: simpan perubahan terkini dulu (pantas)
+    clearTimeout(syncTimer);
+    await pushChanges();
+    try { localStorage.removeItem('rpm_dirty'); } catch(e) {}
 
     // Langkah 2: tulis ke Sheets (lambat — 5-15 saat)
     const data = await gasRequest(url, { action: 'writeSheets' });
@@ -5766,7 +5772,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Auto-load dari Google Sheets semasa startup
   if (state.settings.scriptURL && state.settings.scriptURL.includes('script.google.com')) {
-    setSyncStatus('syncing', 'Memuatkan data...');
+    setSyncStatus('syncing', 'Menyemak server...');
     autoLoadFromSheets();
   } else {
     setSyncStatus('offline', 'Tetapkan URL Sync');
@@ -5779,6 +5785,15 @@ window.addEventListener('DOMContentLoaded', () => {
       syncToSheets();
     }
   });
+
+  // Amaran jika tutup tab sebelum perubahan sempat disimpan
+  window.addEventListener('beforeunload', e => {
+    if (localStorage.getItem('rpm_dirty')) { e.preventDefault(); e.returnValue = ''; }
+  });
+  // Internet kembali → simpan perubahan tertunggak
+  window.addEventListener('online', () => {
+    if (localStorage.getItem('rpm_dirty')) syncToSheets(true);
+  });
 });
 
 // Load senyap dari Sheets semasa startup
@@ -5786,6 +5801,12 @@ window.addEventListener('DOMContentLoaded', () => {
 // localStorage hanya digunakan jika sambungan gagal.
 async function autoLoadFromSheets() {
   const url = state.settings.scriptURL;
+  // Ada perubahan yang belum sampai ke server (cth. internet putus) → hantar dulu, jangan tulis ganti.
+  // ponytail: perubahan dari peranti lain sejak itu akan ditimpa; tambah merge per-rekod jika guna banyak peranti serentak.
+  if (localStorage.getItem('rpm_dirty')) {
+    syncToSheets(true);
+    return;
+  }
   try {
     const data = await gasGet(url, { action: 'loadAll' });
     if (data.error) throw new Error(data.error);
@@ -5806,14 +5827,14 @@ async function autoLoadFromSheets() {
     // SELALU pakai data server jika ada data di server
     // Hanya kekal localStorage jika server benar-benar kosong (0 rekod)
     // DAN localStorage ada data — maknanya belum pernah sync langsung
-    if (sheetsScoreCount === 0 && localScoreCount > 0) {
-      setSyncStatus('online', 'Bersambung — data tempatan (belum sync)');
-      showToast('⚠️ Server kosong. Klik Sync untuk simpan data anda ke server.', 'warning');
-      console.log('autoLoad: server kosong, kekal localStorage (' + localScoreCount + ' rekod). Sila Sync!');
+    // Server kosong, atau guru dah mula ubah data semasa menunggu → data peranti ini menang, hantar automatik
+    if ((sheetsScoreCount === 0 && localScoreCount > 0) || localStorage.getItem('rpm_dirty')) {
+      syncToSheets(true);
       return;
     }
 
     // Guna data server — ini sumber hakiki
+    const before = JSON.stringify(syncParts());
     if (data.students)   state.students   = data.students;
     if (data.scores)     state.scores     = data.scores;
     if (data.rpt)        state.rpt        = data.rpt;
@@ -5827,6 +5848,14 @@ async function autoLoadFromSheets() {
 
     // Simpan ke localStorage sebagai cache
     saveLocal();
+    rememberSent();
+
+    const timeStr = new Date().toLocaleTimeString('ms-MY', { hour:'2-digit', minute:'2-digit' });
+    // Data server sama dengan yang sudah dipaparkan → jangan lukis semula skrin, terus guna
+    if (JSON.stringify(syncParts()) === before) {
+      setSyncStatus('online', `✓ Disimpan · ${timeStr}`);
+      return;
+    }
     updatePendingBadge();
 
     // Respect URL hash — jika ada hash (#entry, #points dll), guna itu
@@ -5837,12 +5866,9 @@ async function autoLoadFromSheets() {
       : (document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
     navigateTo(activePage);
 
-    const timeStr = new Date().toLocaleTimeString('ms-MY', { hour:'2-digit', minute:'2-digit' });
-    setSyncStatus('online', `Dikemas kini · ${timeStr}`);
+    setSyncStatus('online', `✓ Dikemas kini · ${timeStr}`);
 
-    if (sheetsScoreCount > 0) {
-      showToast(`✅ ${sheetsScoreCount} rekod dimuatkan dari server.`, 'success');
-    } else {
+    if (sheetsScoreCount === 0) {
       setSyncStatus('online', 'Bersambung (tiada data lagi)');
     }
 
