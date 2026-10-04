@@ -2213,7 +2213,7 @@ tbody tr:hover { background: var(--surface); }
                 </button>
               </div>
               <div style="margin-top:8px;padding:8px 12px;background:var(--warn-soft);border:1px solid #fcd34d;border-radius:8px;font-size:12px;color:#92400e">
-                <strong>💡 Tip:</strong> TP disimpan <strong>automatik</strong> sebaik sahaja anda masukkan — tak perlu tekan apa-apa. Tengok titik hijau <strong>✓ Disimpan</strong> di bawah menu kiri. Tekan <strong>Kemas kini Sheets</strong> hanya bila mahu lihat data dalam Google Sheets.
+                <strong>💡 Tip:</strong> TP disimpan <strong>automatik</strong> sebaik sahaja anda masukkan, dan Google Sheets dikemas kini sendiri ~20 saat kemudian — tak perlu tekan apa-apa. Tengok titik hijau <strong>✓ Disimpan & Sheets dikemas</strong> di bawah menu kiri.
               </div>
 
               <div class="divider"></div>
@@ -2494,6 +2494,7 @@ let ui = {
 let charts = {};
 let syncTimer;
 let syncing = false, syncAgain = false;
+let sheetsTimer, editGen = 0;   // Google Sheets dikemas kini automatik selepas simpan
 let lastSent = {};   // part -> JSON terakhir yang berjaya dihantar ke server
 
 // ═══════════════════════════════════════════════════════
@@ -2538,7 +2539,8 @@ function getScore(subject, cls, studentName, topicId, sp) {
   return state.scores[subject]?.[key]?.[topicId]?.[sp] || null;
 }
 
-function setScore(subject, cls, studentName, topicId, sp, val, dateVal) {
+// silent = import: jangan beri mata semula & jangan simpan setiap baris (pemanggil simpan sekali)
+function setScore(subject, cls, studentName, topicId, sp, val, dateVal, silent) {
   const key = subject === 'science' ? `${cls}__${studentName}` : studentName;
   if (!state.scores[subject]) state.scores[subject] = {};
   if (!state.scores[subject][key]) state.scores[subject][key] = {};
@@ -2554,7 +2556,7 @@ function setScore(subject, cls, studentName, topicId, sp, val, dateVal) {
       date: dateVal || existing.date || new Date().toISOString().split('T')[0]
     };
     // Award points: new TP value (and bonus if improved)
-    if (newTP > 0) {
+    if (newTP > 0 && !silent) {
       const pts    = newTP;                       // base = TP value
       const bonus  = newTP > oldTP ? 1 : 0;      // +1 if improved from previous
       const reason = `${subject === 'science' ? 'Sains' : 'BI'} SP ${sp} — TP ${newTP}${bonus ? ' (+1 peningkatan)' : ''}`;
@@ -2563,6 +2565,7 @@ function setScore(subject, cls, studentName, topicId, sp, val, dateVal) {
   } else {
     delete state.scores[subject][key][topicId][sp];
   }
+  if (silent) return;
   saveLocal();
   updatePendingBadge();
   scheduleSyncAutoSave();
@@ -2634,7 +2637,8 @@ function tpBadge(avg) {
 function scheduleSyncAutoSave() {
   clearTimeout(syncTimer);
   if (!state.settings.scriptURL || state.settings.scriptURL.includes('script.google.com') === false) return;
-  try { localStorage.setItem('rpm_dirty', '1'); } catch(e) {}
+  editGen++;
+  try { localStorage.setItem('rpm_dirty', '1'); localStorage.setItem('rpm_sheets_dirty', '1'); } catch(e) {}
   if (syncing) { syncAgain = true; return; }
   setSyncStatus('syncing', 'Belum disimpan...');
   syncTimer = setTimeout(() => syncToSheets(true), 1500);
@@ -4538,6 +4542,7 @@ async function syncToSheets(auto) {
     try { localStorage.removeItem('rpm_dirty'); } catch(e) {}
     setSyncStatus('online', '✓ Disimpan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
     if (!auto) showToast('✅ Semua data telah disimpan.', 'success');
+    scheduleSheetsWrite();
   } catch(e) {
     setSyncStatus('error', 'Belum disimpan · cuba semula...');
     if (!auto) showToast('Gagal simpan (data selamat dalam peranti ini, akan cuba semula): ' + e.message, 'error');
@@ -4545,6 +4550,33 @@ async function syncToSheets(auto) {
     syncTimer = setTimeout(() => syncToSheets(true), 30000);
   } finally {
     syncing = false;
+  }
+}
+
+// ── KEMAS KINI SHEETS AUTOMATIK: 20 saat selepas simpan terakhir, supaya Sheets sentiasa sama dengan app ──
+function scheduleSheetsWrite(delay) {
+  clearTimeout(sheetsTimer);
+  if (!localStorage.getItem('rpm_sheets_dirty')) return;
+  sheetsTimer = setTimeout(autoWriteSheets, delay || 20000);
+}
+
+async function autoWriteSheets() {
+  const url = state.settings.scriptURL;
+  if (!url || !url.includes('script.google.com')) return;
+  if (syncing || localStorage.getItem('rpm_dirty')) return scheduleSheetsWrite();
+  if (getTotalDataCount() === 0) return;   // jangan padam Sheets dengan data kosong
+  const gen = editGen;
+  const timeStr = () => new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'});
+  try {
+    const data = await gasRequest(url, { action: 'writeSheets' });
+    if (data.error) throw new Error(data.error);
+    if (gen === editGen) {   // tiada perubahan baru semasa menulis
+      try { localStorage.removeItem('rpm_sheets_dirty'); } catch(e) {}
+      if (!syncing) setSyncStatus('online', '✓ Disimpan & Sheets dikemas · ' + timeStr());
+    }
+  } catch(e) {
+    console.warn('autoWriteSheets gagal:', e.message);
+    scheduleSheetsWrite(60000);
   }
 }
 
@@ -4557,6 +4589,9 @@ async function writeToSheets() {
     showToast('Sila konfigurasi URL Apps Script dahulu.', 'warning');
     return;
   }
+  // Jangan tulis ganti Sheets (salinan sandaran) dengan data kosong
+  if (getTotalDataCount() === 0 &&
+      !confirm('Tiada data TP dalam app sekarang.\n\nJika teruskan, data TP dalam Google Sheets akan DIPADAM.\nUntuk ambil semula data dari Sheets, tekan "Pulihkan dari Sheets" di Tetapan & Sync.\n\nTeruskan juga?')) return;
 
   // Disable butang semasa proses
   const btn  = document.getElementById('writeSheetsBtn');
@@ -4573,8 +4608,11 @@ async function writeToSheets() {
     try { localStorage.removeItem('rpm_dirty'); } catch(e) {}
 
     // Langkah 2: tulis ke Sheets (lambat — 5-15 saat)
+    const gen  = editGen;
+    clearTimeout(sheetsTimer);
     const data = await gasRequest(url, { action: 'writeSheets' });
     if (data.error) throw new Error(data.error);
+    if (gen === editGen) try { localStorage.removeItem('rpm_sheets_dirty'); } catch(e) {}
 
     const timeStr = new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'});
     setSyncStatus('online', 'Sheets dikemas · ' + timeStr);
@@ -4593,24 +4631,23 @@ async function writeToSheets() {
 // ── PULIHKAN DARI SHEETS → server → app ──────────────────────────
 // Guna ini jika data dalam app/server salah.
 // GAS akan baca dari tab TARIKH_TAKSIRAN dan simpan semula ke server.
-async function restoreFromSheets() {
+async function restoreFromSheets(auto) {
   const url = state.settings.scriptURL;
   if (!url || !url.includes('script.google.com')) {
     showToast('Sila konfigurasi URL Apps Script dahulu.', 'warning');
     return;
   }
 
-  if (!confirm('Ini akan baca data dari tab TARIKH_TAKSIRAN dalam Google Sheets dan simpan ke server.\n\nPastikan tab "TARIKH_TAKSIRAN" ada data yang betul.\n\nTeruskan?')) return;
+  if (!auto && !confirm('Ini akan baca data dari tab TARIKH_TAKSIRAN dalam Google Sheets dan simpan ke server.\n\nPastikan tab "TARIKH_TAKSIRAN" ada data yang betul.\n\nTeruskan?')) return;
 
-  setSyncStatus('syncing', 'Memulihkan...');
-  showToast('⏳ Memulihkan data dari Google Sheets...', 'info');
+  setSyncStatus('syncing', 'Mengambil data dari Google Sheets...');
+  if (!auto) showToast('⏳ Memulihkan data dari Google Sheets...', 'info');
 
   try {
     // Hantar action importFromSheets melalui POST
     const restoreData = await gasRequest(url, { action: 'importFromSheets' });
     if (restoreData.error) throw new Error(restoreData.error);
 
-    showToast(`⏳ ${restoreData.imported || 0} rekod dipulihkan. Memuatkan semula...`, 'success');
 
     // Muat semula data dari server ke app
     await new Promise(r => setTimeout(r, 1500));
@@ -4626,10 +4663,11 @@ async function restoreFromSheets() {
     if (data.bookChecks) state.bookChecks = data.bookChecks;
 
     saveLocal();
+    rememberSent();
     updatePendingBadge();
     navigateTo(document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
 
-    setSyncStatus('online', 'Dipulihkan · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
+    setSyncStatus('online', '✓ Dimuat dari Sheets · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
     showToast(`✅ Berjaya! ${restoreData.imported || 0} rekod dimuatkan dari Google Sheets.`, 'success');
 
   } catch(e) {
@@ -4954,8 +4992,23 @@ function exportJSON()   { exportExcel(); }
 // IMPORT (Excel / CSV)
 // ═══════════════════════════════════════════════════════
 
+function _finishImport(n) {
+  saveLocal(); updatePendingBadge(); scheduleSyncAutoSave();
+  navigateTo(document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
+  showToast(`✅ ${n} rekod TP diimport. Sedang disimpan ke server...`, 'success');
+}
+
+// Tarikh dari Excel/Sheets (objek Date, "2026-06-22", "22/06/2026") → "2026-06-22"
+function _isoDate(d) {
+  const pad = n => String(n).padStart(2, '0');
+  if (d instanceof Date && !isNaN(d)) return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const s = String(d || '').trim();
+  const m = s.match(/^([0-9]{1,2})[/]([0-9]{1,2})[/]([0-9]{4})$/);
+  return m ? `${m[3]}-${pad(m[2])}-${pad(m[1])}` : s;
+}
+
 function importFile(event) {
-  const file = event.target.files[0];
+  const file = event.target.files ? event.target.files[0] : event.dataTransfer.files[0];
   if (!file) return;
   const ext = file.name.split('.').pop().toLowerCase();
 
@@ -4966,7 +5019,7 @@ function importFile(event) {
   } else {
     showToast('Format tidak disokong. Guna .xlsx atau .csv.', 'error');
   }
-  event.target.value = '';
+  if (event.target.files) event.target.value = '';
 }
 
 function importExcel(file) {
@@ -4974,7 +5027,7 @@ function importExcel(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
 
       // Try to import TP scores from TARIKH_TAKSIRAN sheet if present
       if (wb.SheetNames.includes('TARIKH_TAKSIRAN')) {
@@ -4986,16 +5039,12 @@ function importExcel(file) {
           if (!name || !sp || !tp) return;
           const subject = String(subj).toLowerCase().includes('sains') ? 'science' : 'english';
           const clsVal  = subject === 'science' ? String(cls) : null;
-          const topicId = _spToTopicId(String(sp));
+          const topicId = _spToTopicId(String(sp), subject);
           if (!topicId) return;
-          setScore(subject, clsVal, String(name), topicId, String(sp), parseInt(tp), String(date||''));
+          setScore(subject, clsVal, String(name), topicId, String(sp), parseInt(tp), _isoDate(date), true);
           imported++;
         });
-        if (imported) {
-          saveLocal(); updatePendingBadge(); renderDashboard();
-          showToast(`✅ ${imported} rekod TP diimport dari Excel.`, 'success');
-          return;
-        }
+        if (imported) { _finishImport(imported); return; }
       }
 
       // Fallback: try to import from SAINS_* sheets
@@ -5029,7 +5078,7 @@ function importExcel(file) {
           Object.entries(colMap).forEach(([ci, { topicId, sp }]) => {
             const val = row[ci];
             if (val !== '' && val !== undefined && val !== null) {
-              setScore(subject, cls, String(name), topicId, sp, parseInt(val), '');
+              setScore(subject, cls, String(name), topicId, sp, parseInt(val), '', true);
               total++;
             }
           });
@@ -5037,8 +5086,7 @@ function importExcel(file) {
       });
 
       if (total) {
-        saveLocal(); updatePendingBadge(); renderDashboard();
-        showToast(`✅ ${total} rekod diimport dari Excel.`, 'success');
+        _finishImport(total);
       } else {
         showToast('Fail Excel dibaca tetapi tiada data TP ditemui.', 'warning');
       }
@@ -5067,9 +5115,9 @@ function importCSV(file) {
           const cols = _parseCSVLine(line);
           const [cls, name, , sp, tp, date] = cols;
           if (!cls||!name||!sp||!tp) return;
-          const topicId = _spToTopicId(sp);
+          const topicId = _spToTopicId(sp, 'science');
           if (!topicId) return;
-          setScore('science', cls, name, topicId, sp, parseInt(tp), date||'');
+          setScore('science', cls, name, topicId, sp, parseInt(tp), _isoDate(date), true);
           imported++;
         });
       } else if (header.includes('kemahiran') && header.includes('ls')) {
@@ -5078,16 +5126,15 @@ function importCSV(file) {
           const cols = _parseCSVLine(line);
           const [name, , sp, tp, date] = cols;
           if (!name||!sp||!tp) return;
-          const topicId = _spToTopicId(sp);
+          const topicId = _spToTopicId(sp, 'english');
           if (!topicId) return;
-          setScore('english', null, name, topicId, sp, parseInt(tp), date||'');
+          setScore('english', null, name, topicId, sp, parseInt(tp), _isoDate(date), true);
           imported++;
         });
       }
 
       if (imported) {
-        saveLocal(); updatePendingBadge(); renderDashboard();
-        showToast(`✅ ${imported} rekod diimport dari CSV.`, 'success');
+        _finishImport(imported);
       } else {
         showToast('Format CSV tidak dikenali. Guna CSV yang dieksport dari app ini.', 'warning');
       }
@@ -5098,14 +5145,13 @@ function importCSV(file) {
   reader.readAsText(file, 'UTF-8');
 }
 
-function _spToTopicId(sp) {
+function _spToTopicId(sp, subject) {
   const prefix = sp.split('.')[0];
   const map = {
     '1':'t1','2':'t2','3':'t3','4':'t4','5':'t5',
     '6':'t6','7':'t7','8':'t8','9':'t9','10':'t10'
   };
-  // Try science first
-  if (map[prefix]) return map[prefix];
+  if (subject === 'science') return map[prefix] || null;
   // Try english (LS codes: 1.x.x = ls, 2.x.x = sp etc)
   const engMap = {'1':'ls','2':'sp','3':'rd','4':'wr','5':'la'};
   return engMap[prefix] || null;
@@ -5786,6 +5832,13 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Seret fail Excel/CSV ke mana-mana dalam app untuk import
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) importFile(e);
+  });
+
   // Amaran jika tutup tab sebelum perubahan sempat disimpan
   window.addEventListener('beforeunload', e => {
     if (localStorage.getItem('rpm_dirty')) { e.preventDefault(); e.returnValue = ''; }
@@ -5801,6 +5854,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // localStorage hanya digunakan jika sambungan gagal.
 async function autoLoadFromSheets() {
   const url = state.settings.scriptURL;
+  scheduleSheetsWrite();   // sesi lepas belum sempat kemas kini Sheets
   // Ada perubahan yang belum sampai ke server (cth. internet putus) → hantar dulu, jangan tulis ganti.
   // ponytail: perubahan dari peranti lain sejak itu akan ditimpa; tambah merge per-rekod jika guna banyak peranti serentak.
   if (localStorage.getItem('rpm_dirty')) {
@@ -5830,6 +5884,12 @@ async function autoLoadFromSheets() {
     // Server kosong, atau guru dah mula ubah data semasa menunggu → data peranti ini menang, hantar automatik
     if ((sheetsScoreCount === 0 && localScoreCount > 0) || localStorage.getItem('rpm_dirty')) {
       syncToSheets(true);
+      return;
+    }
+
+    // Server & peranti ini kosong → ambil terus dari Google Sheets (tab TARIKH_TAKSIRAN)
+    if (sheetsScoreCount === 0) {
+      restoreFromSheets(true);
       return;
     }
 
@@ -5868,9 +5928,6 @@ async function autoLoadFromSheets() {
 
     setSyncStatus('online', `✓ Dikemas kini · ${timeStr}`);
 
-    if (sheetsScoreCount === 0) {
-      setSyncStatus('online', 'Bersambung (tiada data lagi)');
-    }
 
   } catch(e) {
     // Gagal sambung — kekal data localStorage sebagai cache
