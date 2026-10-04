@@ -4667,6 +4667,7 @@ async function restoreFromSheets(auto) {
     updatePendingBadge();
     navigateTo(document.querySelector('.nav-item.active')?.dataset?.page || 'dashboard');
 
+    if (!restoreData.imported) showToast('Tab TARIKH_TAKSIRAN dalam Google Sheets kosong. Muat turun Sheets sebagai Excel (.xlsx) dan seret fail ke sini untuk import.', 'warning');
     setSyncStatus('online', '✓ Dimuat dari Sheets · ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}));
     showToast(`✅ Berjaya! ${restoreData.imported || 0} rekod dimuatkan dari Google Sheets.`, 'success');
 
@@ -5857,7 +5858,7 @@ async function autoLoadFromSheets() {
   scheduleSheetsWrite();   // sesi lepas belum sempat kemas kini Sheets
   // Ada perubahan yang belum sampai ke server (cth. internet putus) → hantar dulu, jangan tulis ganti.
   // ponytail: perubahan dari peranti lain sejak itu akan ditimpa; tambah merge per-rekod jika guna banyak peranti serentak.
-  if (localStorage.getItem('rpm_dirty')) {
+  if (localStorage.getItem('rpm_dirty') && getTotalDataCount() > 0) {
     syncToSheets(true);
     return;
   }
@@ -5882,7 +5883,7 @@ async function autoLoadFromSheets() {
     // Hanya kekal localStorage jika server benar-benar kosong (0 rekod)
     // DAN localStorage ada data — maknanya belum pernah sync langsung
     // Server kosong, atau guru dah mula ubah data semasa menunggu → data peranti ini menang, hantar automatik
-    if ((sheetsScoreCount === 0 && localScoreCount > 0) || localStorage.getItem('rpm_dirty')) {
+    if (localScoreCount > 0 && (sheetsScoreCount === 0 || localStorage.getItem('rpm_dirty'))) {
       syncToSheets(true);
       return;
     }
