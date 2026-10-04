@@ -4441,8 +4441,10 @@ function saveSettings() {
 async function saveAndTestSync() {
   state.settings.scriptURL = document.getElementById('setScriptURL').value.trim();
   saveLocal();
-  lastSent = {};   // uji sambungan: hantar semua
-  await syncToSheets();
+  lastSent = {};
+  // Uji sambungan dengan MUAT data dari URL baru (ambil dari Sheets jika server kosong)
+  setSyncStatus('syncing', 'Menyemak server...');
+  await autoLoadFromSheets();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4520,7 +4522,8 @@ async function pushChanges() {
   for (const part in parts) {
     const json = JSON.stringify(parts[part]);
     if (lastSent[part] === json) continue;
-    await gasRequest(url, Object.assign({ action: 'savePart', part }, parts[part]));
+    const res = await gasRequest(url, Object.assign({ action: 'savePart', part }, parts[part]));
+    if (res.error || res.ok === false) throw new Error(res.error || 'Server menolak simpanan');
     lastSent[part] = json;
   }
 }
@@ -4999,6 +5002,13 @@ function _finishImport(n) {
   showToast(`✅ ${n} rekod TP diimport. Sedang disimpan ke server...`, 'success');
 }
 
+// TP yang tersilap format sebagai tarikh dalam Sheets (5 → "1900-01-04") → nombor semula
+function _tpValue(v) {
+  if (v instanceof Date && !isNaN(v)) v = Math.round((Date.UTC(v.getFullYear(), v.getMonth(), v.getDate()) - Date.UTC(1899, 11, 30)) / 864e5);
+  const n = parseInt(v);
+  return n >= 1 && n <= 6 ? n : 0;
+}
+
 // Tarikh dari Excel/Sheets (objek Date, "2026-06-22", "22/06/2026") → "2026-06-22"
 function _isoDate(d) {
   const pad = n => String(n).padStart(2, '0');
@@ -5035,14 +5045,19 @@ function importExcel(file) {
         const ws   = wb.Sheets['TARIKH_TAKSIRAN'];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
         let imported = 0;
+        // Cari lajur ikut nama tajuk (Sheets ada lajur "Bil" di depan, eksport app tiada)
+        const hdr = (rows[0] || []).map(c => String(c || '').trim().toLowerCase());
+        const col = (name, dflt) => { const i = hdr.findIndex(c => c.startsWith(name)); return i >= 0 ? i : dflt; };
+        const cS = col('subjek', 0), cK = col('kelas', 1), cN = col('nama', 2), cSP = col('sp', 4), cTP = col('tp', 5), cD = col('tarikh', 6);
         rows.slice(1).forEach(row => {
-          const [subj, cls, name, , sp, tp, date] = row;
+          const subj = row[cS], cls = row[cK], name = row[cN], sp = row[cSP], date = row[cD];
+          const tp = _tpValue(row[cTP]);
           if (!name || !sp || !tp) return;
           const subject = String(subj).toLowerCase().includes('sains') ? 'science' : 'english';
           const clsVal  = subject === 'science' ? String(cls) : null;
           const topicId = _spToTopicId(String(sp), subject);
           if (!topicId) return;
-          setScore(subject, clsVal, String(name), topicId, String(sp), parseInt(tp), _isoDate(date), true);
+          setScore(subject, clsVal, String(name), topicId, String(sp), tp, _isoDate(date), true);
           imported++;
         });
         if (imported) { _finishImport(imported); return; }
